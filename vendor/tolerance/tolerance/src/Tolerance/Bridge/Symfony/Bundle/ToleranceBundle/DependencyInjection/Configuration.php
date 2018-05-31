@@ -27,49 +27,15 @@ class Configuration implements ConfigurationInterface
 
         $root
             ->children()
-            ->append($this->getMessageProfileNode())
             ->append($this->getOperationRunnersNode())
             ->append($this->getMetricsNode())
             ->booleanNode('operation_runner_listener')->defaultTrue()->end()
+            ->booleanNode('guzzle')->defaultFalse()->end()
             ->append($this->getAopNode())
             ->append($this->getTracerNode())
             ->end();
 
         return $builder;
-    }
-
-    private function getMessageProfileNode()
-    {
-        $builder = new TreeBuilder();
-        $node = $builder->root('message_profile');
-
-        $node
-            ->addDefaultsIfNotSet()
-            ->canBeEnabled()
-            ->children()
-                ->scalarNode('header')->cannotBeEmpty()->defaultValue('x-message-id')->end()
-                ->arrayNode('integrations')
-                    ->addDefaultsIfNotSet()
-                    ->children()
-                        ->booleanNode('monolog')->defaultTrue()->end()
-                        ->booleanNode('rabbitmq')->defaultTrue()->end()
-                        ->booleanNode('jms_serializer')->defaultTrue()->end()
-                    ->end()
-                ->end()
-                ->arrayNode('storage')
-                    ->isRequired()
-                    ->children()
-                        ->booleanNode('in_memory')->defaultFalse()->end()
-                        ->booleanNode('buffered')->defaultTrue()->end()
-                        ->scalarNode('elastica')->cannotBeEmpty()->end()
-                        ->scalarNode('neo4j')->cannotBeEmpty()->end()
-                    ->end()
-                ->end()
-                ->variableNode('current_peer')->defaultValue([])->end()
-            ->end()
-        ;
-
-        return $node;
     }
 
     private function getOperationRunnersNode()
@@ -142,6 +108,33 @@ class Configuration implements ConfigurationInterface
             $nodes[] = $successFailureMetricsNode;
         }
 
+        if (!in_array('buffered', $except)) {
+            $bufferedNode = $builder->root('buffered');
+
+            $bufferedNode
+                ->children()
+                    ->scalarNode('runner')->defaultValue('tolerance.operation_runners.default')->end()
+                    ->scalarNode('buffer')->defaultValue('in_memory')->end()
+                ->end()
+            ;
+
+            $nodes[] = $bufferedNode;
+        }
+
+        if (!in_array('placeholder', $except)) {
+            $placeholderNode = $builder->root('placeholder');
+
+            $placeholderNode
+                ->children()
+                    ->scalarNode('runner')->defaultValue('tolerance.operation_runners.default')->end()
+                    ->variableNode('value')->defaultNull()->end()
+                    ->scalarNode('logger')->defaultNull()->end()
+                ->end()
+            ;
+
+            $nodes[] = $placeholderNode;
+        }
+
         return $nodes;
     }
 
@@ -171,7 +164,9 @@ class Configuration implements ConfigurationInterface
             $exponentialNode = $builder->root('exponential_back_off');
             $strategyChildren = $exponentialNode
                 ->children()
-                ->integerNode('exponent')->isRequired()->end()
+                ->floatNode('exponent')->end()
+                ->floatNode('initial_exponent')->end()
+                ->floatNode('step')->defaultValue(1.0)->end()
                 ->arrayNode('waiter')
                 ->isRequired()
                 ->children();
@@ -182,6 +177,21 @@ class Configuration implements ConfigurationInterface
             }
 
             $nodes[] = $exponentialNode;
+        }
+
+        if (!in_array('timeout', $except)) {
+            $timeoutNode = $builder->root('timeout');
+            $strategyChildren = $timeoutNode
+                ->children()
+                ->integerNode('timeout')->isRequired()->end()
+                ->arrayNode('waiter')->isRequired()->children();
+
+            array_push($except, 'timeout');
+            foreach ($this->getWaiterNodes($except) as $node) {
+                $strategyChildren->append($node);
+            }
+
+            $nodes[] = $timeoutNode;
         }
 
         if (!in_array('null', $except)) {
@@ -217,6 +227,7 @@ class Configuration implements ConfigurationInterface
                     ->prototype('array')
                         ->children()
                             ->scalarNode('type')->isRequired()->end()
+                            ->scalarNode('operation_runner')->end()
                             ->variableNode('options')->defaultValue([])->end()
                         ->end()
                     ->end()
@@ -276,6 +287,7 @@ class Configuration implements ConfigurationInterface
             ->canBeEnabled()
             ->children()
                 ->scalarNode('service_name')->defaultNull()->end()
+                ->scalarNode('operation_runner')->defaultNull()->end()
                 ->arrayNode('zipkin')
                     ->isRequired() // As it's the only backend at the moment
                     ->children()
@@ -284,6 +296,15 @@ class Configuration implements ConfigurationInterface
                             ->children()
                                 ->scalarNode('base_url')->isRequired()->end()
                             ->end()
+                        ->end()
+                    ->end()
+                ->end()
+                ->arrayNode('rabbitmq')
+                    ->canBeEnabled()
+                    ->children()
+                        ->arrayNode('consumers')
+                            ->defaultValue([])
+                            ->prototype('scalar')->end()
                         ->end()
                     ->end()
                 ->end()

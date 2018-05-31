@@ -10,6 +10,6 @@ automatically with a Symfony application.
     getting-started
     operation-runner
     operation-wrappers
-    message-profile
     tracer
     metrics
+    guzzle

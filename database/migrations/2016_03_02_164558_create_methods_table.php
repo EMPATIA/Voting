@@ -21,26 +21,6 @@ class CreateMethodsTable extends Migration
             $table->softDeletes();
         });
 
-        $methods = array(
-            array(
-                'method_group_id'   => 1,
-                'code'              => 'like'
-            ),
-            array(
-                'method_group_id'   => 1,
-                'code'              => 'multi_voting'
-            ),
-            array(
-                'method_group_id'   => 1,
-                'code'              => 'negative_voting'
-            ),
-            array(
-                'method_group_id'   => 1,
-                'code'              => 'rank'
-            )
-
-        );
-        DB::table('methods')->insert($methods);
     }
 
     /**

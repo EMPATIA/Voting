@@ -16,7 +16,7 @@ class TestControler extends Controller
     public function index(Request $request)
     {
         try{
-            $event = Event::whereKey("GxTT0RlgcgYXZwf40hwUX7hDKDRYa5Nx")->firstOrFail();
+            $event = Event::where("key","GxTT0RlgcgYXZwf40hwUX7hDKDRYa5Nx")->firstOrFail();
             $test = new MultiVote($event);
 
             return response()->json(['data' => $test->getTotalSummary()], 200);

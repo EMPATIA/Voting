@@ -63,6 +63,12 @@ class MethodGroup extends Model
         }
     }
 
+    public function newTranslation($language = null, $languageDefault = null) {
+        $translation = $this->hasMany('App\MethodGroupTranslation')->orderByRaw("FIELD(language_code,'".$languageDefault."','".$language."')DESC")->first();
+        $this->setAttribute('name',$translation->name ?? null);
+    }
+
+
     /**
      * @return mixed
      */

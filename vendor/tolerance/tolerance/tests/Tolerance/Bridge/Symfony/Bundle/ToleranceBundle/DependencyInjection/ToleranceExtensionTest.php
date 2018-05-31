@@ -3,10 +3,9 @@
 namespace Tolerance\Bridge\Symfony\Bundle\ToleranceBundle\DependencyInjection;
 
 use Prophecy\Argument;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
-use Tolerance\Bridge\RabbitMqBundle\MessageProfile\StoreMessageProfileConsumer;
-use Tolerance\Bridge\RabbitMqBundle\MessageProfile\StoreMessageProfileProducer;
 
 class ToleranceExtensionTest extends \PHPUnit_Framework_TestCase
 {
@@ -36,81 +35,6 @@ class ToleranceExtensionTest extends \PHPUnit_Framework_TestCase
         $this->assertInstanceOf('Symfony\Component\DependencyInjection\Extension\ExtensionInterface', $this->extension);
     }
 
-    public function test_that_it_creates_the_kernel_listener_to_store_the_request_profile()
-    {
-        $definitionArgument = Argument::type('Symfony\Component\DependencyInjection\Definition');
-
-        $builder = $this->createBuilder();
-        $builder->addResource(Argument::type('Symfony\Component\Config\Resource\ResourceInterface'))->shouldBeCalled();
-        $builder->setDefinition(Argument::any(), $definitionArgument)->willReturn(null);
-        $builder->setParameter('tolerance.message_profile.header', 'x-message-id')->shouldBeCalled();
-        $builder->setDefinition('tolerance.message_profile.stores_profile', Argument::that(function(Definition $definition) {
-            return $definition->hasTag('kernel.event_listener');
-        }));
-
-        $this->extension->load([
-            'tolerance' => [
-                'message_profile' => [
-                    'storage' => [
-                        'in_memory' => null
-                    ],
-                ],
-            ]
-        ], $builder->reveal());
-    }
-
-    public function test_that_it_adds_the_monolog_processor()
-    {
-        $definitionArgument = Argument::type('Symfony\Component\DependencyInjection\Definition');
-
-        $builder = $this->createBuilder();
-        $builder->addResource(Argument::type('Symfony\Component\Config\Resource\ResourceInterface'))->shouldBeCalled();
-        $builder->setDefinition(Argument::any(), $definitionArgument)->willReturn(null);
-        $builder->setParameter(Argument::any(), Argument::any())->shouldBeCalled();
-        $builder->setDefinition('tolerance.message_profile.monolog.request_identifier_processor', Argument::that(function(Definition $definition) {
-            return $definition->hasTag('kernel.event_listener');
-        }));
-
-        $this->extension->load([
-            'tolerance' => [
-                'message_profile' => [
-                    'integrations' => [
-                        'monolog' => true,
-                    ],
-                    'storage' => [
-                        'in_memory' => null
-                    ],
-                ],
-            ]
-        ], $builder->reveal());
-    }
-
-    public function test_it_adds_the_guzzle_middlewares()
-    {
-        $definitionArgument = Argument::type('Symfony\Component\DependencyInjection\Definition');
-
-        $builder = $this->createBuilder();
-        $builder->addResource(Argument::type('Symfony\Component\Config\Resource\ResourceInterface'))->shouldBeCalled();
-        $builder->setDefinition(Argument::any(), $definitionArgument)->willReturn(null);
-        $builder->setParameter(Argument::any(), Argument::any())->shouldBeCalled();
-        $builder->setDefinition('tolerance.message_profile.guzzle.middleware.store_profile', Argument::that(function(Definition $definition) {
-            return $definition->hasTag('csa_guzzle.middleware');
-        }));
-        $builder->setDefinition('tolerance.message_profile.guzzle.middleware.message_identifier', Argument::that(function(Definition $definition) {
-            return $definition->hasTag('csa_guzzle.middleware');
-        }));
-
-        $this->extension->load([
-            'tolerance' => [
-                'message_profile' => [
-                    'storage' => [
-                        'in_memory' => null
-                    ],
-                ],
-            ]
-        ], $builder->reveal());
-    }
-
     /**
      * @expectedException \RuntimeException
      */
@@ -134,11 +58,10 @@ class ToleranceExtensionTest extends \PHPUnit_Framework_TestCase
         $definitionArgument = Argument::type('Symfony\Component\DependencyInjection\Definition');
 
         $builder = $this->createBuilder();
-        $builder->addResource(Argument::type('Symfony\Component\Config\Resource\ResourceInterface'))->shouldBeCalled();
         $builder->setDefinition(Argument::any(), $definitionArgument)->willReturn(null);
         $builder->setParameter(Argument::any(), Argument::any())->shouldBeCalled();
         $builder->setDefinition('tolerance.operation_runner_listeners.buffered_termination', Argument::that(function(Definition $definition) {
-            return $definition->hasTag('kernel.event_listener');
+            return $definition->hasTag('kernel.event_subscriber');
         }))->shouldBeCalled();
 
         $this->extension->load([], $builder->reveal());
@@ -149,7 +72,6 @@ class ToleranceExtensionTest extends \PHPUnit_Framework_TestCase
         $definitionArgument = Argument::type('Symfony\Component\DependencyInjection\Definition');
 
         $builder = $this->createBuilder();
-        $builder->addResource(Argument::type('Symfony\Component\Config\Resource\ResourceInterface'))->shouldBeCalled();
         $builder->setDefinition(Argument::any(), $definitionArgument)->willReturn(null);
         $builder->setParameter(Argument::any(), Argument::any())->shouldBeCalled();
         $builder->setDefinition('tolerance.operation_runner_listeners.buffered_termination', Argument::any())->shouldNotBeCalled();
@@ -157,70 +79,6 @@ class ToleranceExtensionTest extends \PHPUnit_Framework_TestCase
         $this->extension->load([
             'tolerance' => [
                 'operation_runner_listener' => false,
-            ]
-        ], $builder->reveal());
-    }
-
-    public function test_it_register_decorators_for_rabbitmq_producers()
-    {
-        $definitionArgument = Argument::type('Symfony\Component\DependencyInjection\Definition');
-
-        $builder = $this->createBuilder();
-        $builder->addResource(Argument::type('Symfony\Component\Config\Resource\ResourceInterface'))->shouldBeCalled();
-        $builder->setDefinition(Argument::any(), $definitionArgument)->willReturn(null);
-        $builder->setParameter(Argument::any(), Argument::any())->shouldBeCalled();
-
-        $builder->findTaggedServiceIds('old_sound_rabbit_mq.producer')->shouldBeCalled()->willReturn([
-            'service.id' => [[]],
-        ]);
-
-        $builder->setDefinition('service.id.tolerance_decorator', Argument::that(function(Definition $definition) {
-            return $definition->getDecoratedService()[0] == 'service.id' &&
-            $definition->getClass() == StoreMessageProfileProducer::class;
-        }));
-
-        $this->extension->load([
-            'tolerance' => [
-                'message_profile' => [
-                    'integrations' => [
-                        'rabbitmq' => true,
-                    ],
-                    'storage' => [
-                        'in_memory' => null
-                    ],
-                ],
-            ]
-        ], $builder->reveal());
-    }
-
-    public function test_it_register_decorators_for_rabbitmq_consumers()
-    {
-        $definitionArgument = Argument::type('Symfony\Component\DependencyInjection\Definition');
-
-        $builder = $this->createBuilder();
-        $builder->addResource(Argument::type('Symfony\Component\Config\Resource\ResourceInterface'))->shouldBeCalled();
-        $builder->setDefinition(Argument::any(), $definitionArgument)->willReturn(null);
-        $builder->setParameter(Argument::any(), Argument::any())->shouldBeCalled();
-
-        $builder->findTaggedServiceIds('old_sound_rabbit_mq.consumer')->shouldBeCalled()->willReturn([
-            'service.id' => [[]],
-        ]);
-
-        $builder->setDefinition('service.id.tolerance_decorator', Argument::that(function(Definition $definition) {
-            return $definition->getDecoratedService()[0] == 'service.id' &&
-            $definition->getClass() == StoreMessageProfileConsumer::class;
-        }));
-
-        $this->extension->load([
-            'tolerance' => [
-                'message_profile' => [
-                    'integrations' => [
-                        'rabbitmq' => true,
-                    ],
-                    'storage' => [
-                        'in_memory' => null
-                    ],
-                ],
             ]
         ], $builder->reveal());
     }
@@ -273,6 +131,33 @@ class ToleranceExtensionTest extends \PHPUnit_Framework_TestCase
         ], $builder->reveal());
     }
 
+    public function test_it_registers_the_timeout_waiter_service()
+    {
+        $definitionArgument = Argument::type('Symfony\Component\DependencyInjection\Definition');
+
+        $builder = $this->createBuilder();
+        $builder->setDefinition(Argument::any(), $definitionArgument)->willReturn(null);
+        $builder->setDefinition('tolerance.operation_runners.foo.waiter', Argument::any())->shouldBeCalled();
+
+        $this->extension->load([
+            'tolerance' => [
+                'operation_runners' => [
+                    'foo' => [
+                        'retry' => [
+                            'runner' => ['callback' => null],
+                            'waiter' => [
+                                'timeout' => [
+                                    'waiter' => ['null' => null],
+                                    'timeout' => 60,
+                                ]
+                            ],
+                        ]
+                    ]
+                ],
+            ]
+        ], $builder->reveal());
+    }
+
     /**
      * @return \Symfony\Component\DependencyInjection\ContainerBuilder
      */
@@ -285,6 +170,12 @@ class ToleranceExtensionTest extends \PHPUnit_Framework_TestCase
         $builder->setParameter(Argument::any(), Argument::any())->willReturn(null);
         $builder->findTaggedServiceIds(Argument::any())->willReturn([]);
         $builder->addResource(Argument::type('Symfony\Component\Config\Resource\ResourceInterface'))->willReturn(null);
+
+        if (method_exists(ContainerBuilder::class, 'fileExists')) {
+            $builder->fileExists(Argument::any())->will(function ($arguments) {
+                return file_exists($arguments[0]);
+            });
+        }
 
         $definition = $this->prophesize('Symfony\Component\DependencyInjection\Definition');
         $definition->replaceArgument(Argument::any(), Argument::any())->willReturn($definition);

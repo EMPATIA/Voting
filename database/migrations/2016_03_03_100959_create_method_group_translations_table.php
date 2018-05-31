@@ -22,21 +22,6 @@ class CreateMethodGroupTranslationsTable extends Migration
             $table->softDeletes();
         });
 
-        $methodGroupTranslations = array(
-            array(
-                'method_group_id'   => 1,
-                'language_code'       => 'en',
-                'name'              => 'Web Platform',
-                'description'       => 'Method for the web platform'
-            ),
-            array(
-                'method_group_id'   => 2,
-                'language_code'       => 'en',
-                'name'              => 'CellPhones',
-                'description'       => 'Method for cellPhones'
-            )
-        );
-        DB::table('method_group_translations')->insert($methodGroupTranslations);
     }
 
     /**

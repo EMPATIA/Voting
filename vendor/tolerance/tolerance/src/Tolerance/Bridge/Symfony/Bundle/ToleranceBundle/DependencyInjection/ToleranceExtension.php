@@ -12,64 +12,41 @@
 namespace Tolerance\Bridge\Symfony\Bundle\ToleranceBundle\DependencyInjection;
 
 use GuzzleHttp\Client;
+use GuzzleHttp\ClientInterface;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Definition;
-use Symfony\Component\DependencyInjection\Extension\PrependExtensionInterface;
 use Symfony\Component\DependencyInjection\Parameter;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\DependencyInjection\Extension;
 use Symfony\Component\DependencyInjection\Loader;
-use Tolerance\Bridge\RabbitMqBundle\MessageProfile\StoreMessageProfileConsumer;
-use Tolerance\Bridge\RabbitMqBundle\MessageProfile\StoreMessageProfileProducer;
 use Tolerance\Bridge\Symfony\Metrics\EventListener\RequestEnded\SendRequestTimeToPublisher;
 use Tolerance\Bridge\Symfony\Metrics\Request\StaticRequestMetricNamespaceResolver;
-use Tolerance\MessageProfile\Storage\ElasticaStorage;
-use Tolerance\MessageProfile\Storage\Neo4jStorage;
 use Tolerance\Metrics\Collector\NamespacedCollector;
 use Tolerance\Metrics\Collector\RabbitMq\RabbitMqCollector;
 use Tolerance\Metrics\Collector\RabbitMq\RabbitMqHttpClient;
 use Tolerance\Metrics\Publisher\BeberleiMetricsAdapterPublisher;
+use Tolerance\Metrics\Publisher\DelegatesToOperationRunnerPublisher;
 use Tolerance\Metrics\Publisher\HostedGraphitePublisher;
 use Tolerance\Metrics\Publisher\LoggerPublisher;
+use Tolerance\Operation\Buffer\InMemoryOperationBuffer;
+use Tolerance\Operation\Placeholder\PlaceholderResponseResolver;
+use Tolerance\Operation\Placeholder\ValueConstructedPlaceholderResponseResolver;
+use Tolerance\Operation\Runner\BufferedOperationRunner;
 use Tolerance\Operation\Runner\CallbackOperationRunner;
 use Tolerance\Operation\Runner\Metrics\SuccessFailurePublisherOperationRunner;
+use Tolerance\Operation\Runner\PlaceholderOperationRunner;
 use Tolerance\Operation\Runner\RetryOperationRunner;
 use Tolerance\Waiter\ExponentialBackOff;
 use Tolerance\Waiter\CountLimited;
 use Tolerance\Waiter\NullWaiter;
 use Tolerance\Waiter\SleepWaiter;
+use Tolerance\Waiter\TimeOut;
 
-class ToleranceExtension extends Extension implements PrependExtensionInterface
+class ToleranceExtension extends Extension
 {
-    /**
-     * {@inheritdoc}
-     */
-    public function prepend(ContainerBuilder $container)
-    {
-        $configs = $container->getExtensionConfig($this->getAlias());
-        $config = $this->processConfiguration(new Configuration(), $configs);
-        if (!$config['message_profile']['enabled'] || !$config['message_profile']['integrations']['jms_serializer']) {
-            return;
-        }
-
-        $bundles = $container->getParameter('kernel.bundles');
-        if (array_key_exists('JMSSerializerBundle', $bundles)) {
-            $container->prependExtensionConfig('jms_serializer', [
-                'metadata' => [
-                    'directories' => [
-                        'ToleranceMessageProfile' => [
-                            'namespace_prefix' => 'Tolerance\\MessageProfile\\',
-                            'path' => '%kernel.root_dir%/../vendor/tolerance/tolerance/src/Tolerance/Bridge/JMSSerializer/MessageProfile/Resources/config',
-                        ],
-                    ],
-                ],
-            ]);
-        }
-    }
-
     /**
      * {@inheritdoc}
      */
@@ -93,20 +70,50 @@ class ToleranceExtension extends Extension implements PrependExtensionInterface
             $loader->load('operations/listeners.xml');
         }
 
-        if ($config['message_profile']['enabled']) {
-            $this->loadMessageProfile($container, $loader, $config['message_profile']);
+        if ($config['guzzle']) {
+            $loader->load('operations/guzzle.xml');
         }
 
         if ($config['tracer']['enabled']) {
+            $loader->load('tracer.xml');
+            $container->setParameter('tolerance.tracer.service_name', $config['tracer']['service_name']);
+
             if (array_key_exists('zipkin', $config['tracer'])) {
                 if (array_key_exists('http', $config['tracer']['zipkin'])) {
                     $container->setParameter('tolerance.tracer.zipkin.http.base_url', $config['tracer']['zipkin']['http']['base_url']);
+                    $tracer = 'tolerance.tracer.zipkin.http';
                 }
             }
 
-            $container->setParameter('tolerance.tracer.service_name', $config['tracer']['service_name']);
+            if (!isset($tracer)) {
+                throw new \InvalidArgumentException('No tracer configured');
+            }
 
-            $loader->load('tracer.xml');
+            if (null !== ($runner = $config['tracer']['operation_runner'])) {
+                $container->getDefinition($tracer)->addTag('tolerance.operation_wrapper', [
+                    'runner' => $runner,
+                    'methods' => 'trace',
+                ]);
+            }
+
+            $container->setAlias('tolerance.tracer', $tracer);
+
+            if ($container->getParameter('kernel.debug')) {
+                $loader->load('tracer/debug.xml');
+            }
+
+            if (interface_exists('GuzzleHttp\ClientInterface')) {
+                if (version_compare(ClientInterface::VERSION, '6.0') >= 0) {
+                    $loader->load('tracer/guzzle/6.x.xml');
+                } else {
+                    $loader->load('tracer/guzzle/4.x-5.x.xml');
+                }
+            }
+
+            if ($config['tracer']['rabbitmq']['enabled']) {
+                $container->setParameter('tolerance.tracer.rabbitmq.enabled', true);
+                $container->setParameter('tolerance.tracer.rabbitmq.consumers', $config['tracer']['rabbitmq']['consumers']);
+            }
         }
 
         foreach ($config['operation_runners'] as $name => $operationRunner) {
@@ -135,96 +142,6 @@ class ToleranceExtension extends Extension implements PrependExtensionInterface
         }
     }
 
-    private function loadMessageProfile(ContainerBuilder $container, LoaderInterface $loader, array $config)
-    {
-        $container->setParameter('tolerance.message_profile.header', $config['header']);
-        $container->setParameter('tolerance.message_profile.current_peer', $config['current_peer']);
-
-        $loader->load('message-profile/listener.xml');
-        $loader->load('message-profile/storage.xml');
-        $loader->load('message-profile/guzzle.xml');
-
-        $this->configureMessageProfileStorage($container, $loader, $config['storage']);
-        $this->loadMessageProfileIntegrations($container, $loader, $config['integrations']);
-    }
-
-    private function loadMessageProfileIntegrations(ContainerBuilder $container, LoaderInterface $loader, array $config)
-    {
-        if ($config['monolog']) {
-            $loader->load('message-profile/monolog.xml');
-        }
-
-        if ($config['rabbitmq']) {
-            $this->decorateRabbitMqConsumersAndProducers($container, $loader);
-        }
-    }
-
-    private function decorateRabbitMqConsumersAndProducers(ContainerBuilder $container, LoaderInterface $loader)
-    {
-        foreach ($container->findTaggedServiceIds('old_sound_rabbit_mq.producer') as $id => $attributes) {
-            $decoratorId = $id.'.tolerance_decorator';
-            $decoratorDefinition = new Definition(StoreMessageProfileProducer::class, [
-                new Reference($decoratorId.'.inner'),
-                new Reference('tolerance.message_profile.storage'),
-                new Reference('tolerance.message_profile.identifier.generator.uuid'),
-                new Reference('tolerance.message_profile.peer.resolver.current'),
-                new Parameter('tolerance.message_profile.header'),
-            ]);
-
-            $decoratorDefinition->setDecoratedService($id);
-            $container->setDefinition($decoratorId, $decoratorDefinition);
-        }
-
-        foreach ($container->findTaggedServiceIds('old_sound_rabbit_mq.consumer') as $id => $attributes) {
-            $decoratorId = $id.'.tolerance_decorator';
-            $decoratorDefinition = new Definition(StoreMessageProfileConsumer::class, [
-                new Reference($decoratorId.'.inner'),
-                new Reference('tolerance.message_profile.storage'),
-                new Reference('tolerance.message_profile.identifier.generator.uuid'),
-                new Reference('tolerance.message_profile.peer.resolver.current'),
-                new Parameter('tolerance.message_profile.header'),
-            ]);
-
-            $decoratorDefinition->setDecoratedService($id);
-            $container->setDefinition($decoratorId, $decoratorDefinition);
-        }
-    }
-
-    private function configureMessageProfileStorage(ContainerBuilder $container, LoaderInterface $loader, array $config)
-    {
-        if (array_key_exists('elastica', $config)) {
-            $loader->load('message-profile/jms_serializer.xml');
-
-            $storage = 'tolerance.message_profile.storage.elastica';
-            $container->setDefinition($storage, new Definition(
-                ElasticaStorage::class,
-                [
-                    new Reference('tolerance.message_profile.storage.normalizer.jms_serializer'),
-                    new Reference($config['elastica']),
-                ]
-            ));
-        } elseif (array_key_exists('neo4j', $config)) {
-            $storage = 'tolerance.message_profile.storage.neo4j';
-            $container->setDefinition($storage, new Definition(
-                Neo4jStorage::class,
-                [
-                    new Reference($config['neo4j']),
-                    new Reference('tolerance.message_profile.storage.profile_normalizer.simple'),
-                ]
-            ));
-        } elseif (false !== $config['in_memory']) {
-            $storage = 'tolerance.message_profile.storage.in_memory';
-        } else {
-            throw new \RuntimeException('Unable to configure Request Identifier storage');
-        }
-
-        $container->setAlias('tolerance.message_profile.storage', $storage);
-
-        if ($config['buffered']) {
-            $loader->load('message-profile/storage/buffered.xml');
-        }
-    }
-
     private function loadAop(ContainerBuilder $container, array $config)
     {
         $bundles = $container->getParameter('kernel.bundles');
@@ -245,6 +162,10 @@ class ToleranceExtension extends Extension implements PrependExtensionInterface
             return $this->createCallbackOperationRunnerDefinition($container, $name);
         } elseif (array_key_exists('success_failure_metrics', $config)) {
             return $this->createSuccessFailureMetricsOperationRunnerDefinition($container, $name, $config['success_failure_metrics']);
+        } elseif (array_key_exists('buffered', $config)) {
+            return $this->createBufferedOperationRunnerDefinition($container, $name, $config['buffered']);
+        } elseif (array_key_exists('placeholder', $config)) {
+            return $this->createPlaceholderOperationRunnerDefinition($container, $name, $config['placeholder']);
         }
 
         throw new \RuntimeException(sprintf(
@@ -286,6 +207,38 @@ class ToleranceExtension extends Extension implements PrependExtensionInterface
         return $name;
     }
 
+    private function createBufferedOperationRunnerDefinition(ContainerBuilder $container, $name, array $config)
+    {
+        if ($config['buffer'] == 'in_memory') {
+            $buffer = new Definition(InMemoryOperationBuffer::class);
+        } else {
+            $buffer = new Reference($config['buffer']);
+        }
+
+        $definition = $this->createDefinition(BufferedOperationRunner::class, [
+            new Reference($config['runner']),
+            $buffer,
+        ]);
+
+        $container->setDefinition($name, $definition);
+
+        return $name;
+    }
+
+    private function createPlaceholderOperationRunnerDefinition(ContainerBuilder $container, $name, array $config)
+    {
+        $definition = $this->createDefinition(PlaceholderOperationRunner::class, [
+            new Reference($config['runner']),
+            new Definition(ValueConstructedPlaceholderResponseResolver::class, [$config['value']]),
+            null,
+            $config['logger'] !== null ? new Reference($config['logger']) : null,
+        ]);
+
+        $container->setDefinition($name, $definition);
+
+        return $name;
+    }
+
     private function createWaiterDefinition(ContainerBuilder $container, $name, array $config)
     {
         if (array_key_exists('count_limited', $config)) {
@@ -296,6 +249,8 @@ class ToleranceExtension extends Extension implements PrependExtensionInterface
             return $this->createSleepWaiterDefinition($container, $name);
         } elseif (array_key_exists('null', $config)) {
             return $this->createNullWaiterDefinition($container, $name);
+        } elseif (array_key_exists('timeout', $config)) {
+            return $this->createTimeoutWaiterDefinition($container, $name, $config['timeout']);
         }
 
         throw new \RuntimeException(sprintf(
@@ -320,9 +275,19 @@ class ToleranceExtension extends Extension implements PrependExtensionInterface
     {
         $decoratedWaiterName = $this->createWaiterDefinition($container, $name.'.waiter', $config['waiter']);
 
+        // BC
+        if (isset($config['exponent'])) {
+            if (isset($config['initial_exponent'])) {
+                throw new \RuntimeException('The `initial_exponent` has replaced the `exponent` configuration, please only use `initial_exponent`.');
+            }
+
+            $config['initial_exponent'] = $config['exponent'];
+        }
+
         $container->setDefinition($name, new Definition(ExponentialBackOff::class, [
             new Reference($decoratedWaiterName),
-            $config['exponent'],
+            $config['initial_exponent'],
+            $config['step']
         ]));
 
         return $name;
@@ -338,6 +303,18 @@ class ToleranceExtension extends Extension implements PrependExtensionInterface
     private function createNullWaiterDefinition(ContainerBuilder $container, $name)
     {
         $container->setDefinition($name, new Definition(NullWaiter::class));
+
+        return $name;
+    }
+
+    private function createTimeoutWaiterDefinition(ContainerBuilder $container, $name, array $config)
+    {
+        $decoratedWaiterName = $this->createWaiterDefinition($container, $name.'.waiter', $config['waiter']);
+
+        $container->setDefinition($name, new Definition(TimeOut::class, [
+            new Reference($decoratedWaiterName),
+            $config['timeout']
+        ]));
 
         return $name;
     }
@@ -398,7 +375,7 @@ class ToleranceExtension extends Extension implements PrependExtensionInterface
     private function createMetricPublishers(ContainerBuilder $container, array $publishers)
     {
         foreach ($publishers as $name => $publisher) {
-            $this->createMetricPublisher($container, $name, $publisher)->addTag('tolerance.metrics.publisher');
+            $this->createMetricPublisher($container, $name, $publisher);
         }
     }
 
@@ -407,30 +384,35 @@ class ToleranceExtension extends Extension implements PrependExtensionInterface
         $serviceName = 'tolerance.metrics.publisher.'.$name;
 
         if ('logger' == $publisher['type']) {
-            return $container->setDefinition($serviceName, new Definition(LoggerPublisher::class, [
+            $definiton = $container->setDefinition($serviceName, new Definition(LoggerPublisher::class, [
                 new Reference('logger'),
             ]));
-        }
-
-        if ('hosted_graphite' == $publisher['type']) {
-            return $container->setDefinition($serviceName, new Definition(HostedGraphitePublisher::class, [
+        } elseif ('hosted_graphite' == $publisher['type']) {
+            $definiton = $container->setDefinition($serviceName, new Definition(HostedGraphitePublisher::class, [
                 $publisher['options']['server'],
                 $publisher['options']['port'],
                 $publisher['options']['api_key'],
             ]));
-        }
-
-        if ('beberlei' == $publisher['type']) {
-            return $container->setDefinition($serviceName, new Definition(BeberleiMetricsAdapterPublisher::class, [
+        } elseif ('beberlei' == $publisher['type']) {
+            $definiton = $container->setDefinition($serviceName, new Definition(BeberleiMetricsAdapterPublisher::class, [
                 new Reference($publisher['options']['service']),
                 array_key_exists('auto_flush', $publisher['options']) ? (bool) $publisher['options']['auto_flush'] : true,
             ]));
+        } else {
+            throw new \RuntimeException(sprintf(
+                'Publisher "%s" not supported',
+                $publisher['type']
+            ));
         }
 
-        throw new \RuntimeException(sprintf(
-            'Publisher "%s" not supported',
-            $publisher['type']
-        ));
+        if (isset($publisher['operation_runner'])) {
+            $definiton = $container->setDefinition($serviceName, new Definition(DelegatesToOperationRunnerPublisher::class, [
+                $container->getDefinition($serviceName),
+                new Reference($publisher['operation_runner'])
+            ]));
+        }
+
+        $definiton->addTag('tolerance.metrics.publisher');
     }
 
     private function createAopWrapper(ContainerBuilder $container, array $wrapper)

@@ -10,6 +10,7 @@ use App\Method;
 use App\One\One;
 use App\UserEventCode;
 use App\UserEventCodeVote;
+use App\Vote;
 use App\VoteMethods\Like;
 use App\VoteMethods\MultiVote;
 use App\VoteMethods\NegativeVote;
@@ -18,6 +19,8 @@ use Carbon\Carbon;
 use Exception;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
+//use App\VoteType;
+//use App\VoteTypeTranslation;
 
 use App\Http\Requests;
 use Illuminate\Support\Facades\DB;
@@ -297,7 +300,7 @@ class EventsController extends Controller
     public function show(Request $request, $key)
     {
         try {
-            $event = Event::whereKey($key)->firstOrFail();
+            $event = Event::where("key","=",$key)->firstOrFail();
 
             //  begin timezone conversion
             $timezone = empty($request->header('timezone')) ? 'utc' : $request->header('timezone');
@@ -430,13 +433,18 @@ class EventsController extends Controller
      */
     public function store(Request $request)
     {
+
+        if(!empty($request->weightType)){
+            // dd($request->weightType);
+        }
+
         $userKey = ONE::verifyToken($request);
         ONE::verifyKeysRequest($this->keysRequired['create'], $request);
 
         try {
             do {
                 $rand = str_random(32);
-                if (!($exists = Event::whereKey($rand)->exists())) {
+                if (!($exists = Event::where("key",$rand)->exists())) {
                     $key = $rand;
                 }
             } while ($exists);
@@ -454,6 +462,24 @@ class EventsController extends Controller
                     'end_time'      => !empty($request->json('end_time')) ? $request->json('end_time'): '00:00',
                 ]
             );
+
+            /*            if(!empty($request->weightType)){
+                            $weightType = $request->weightType;
+                            foreach($weightType as $key => $type){
+                                $voteType = VoteType::create([
+                                    'event_key' => $event->key,
+                                    'pos'       => $type['pos'],
+                                    'weight'    => $type['weight'],
+                                ]);
+
+                                foreach($type['translations'] as $translation){
+                                        $voteTypeTranslations = $voteType->voteTypeTranslations()->create([
+                                            'lang_code' => $translation['lang_code'],
+                                            'text'      => $translation['translation']
+                                        ]);
+                                }
+                            }
+                        }*/
 
             //  begin timezone conversion
             $timezone = empty($request->header('timezone')) ? 'utc' : $request->header('timezone');
@@ -530,6 +556,7 @@ class EventsController extends Controller
             return response()->json($event, 201);
 
         } catch (Exception $e) {
+            dd($e->getMessage());
             return response()->json(['error' => 'Failed to store the Event'], 500);
         }
         return response()->json(['error' => 'Unauthorized'], 401);
@@ -632,7 +659,7 @@ class EventsController extends Controller
 
         try {
 
-            $event = Event::whereKey($key)->firstOrFail();
+            $event = Event::where("key",$key)->firstOrFail();
 
             $event->start_date  = $request->json('start_date');
             $event->end_date    = $request->json('end_date');
@@ -644,7 +671,27 @@ class EventsController extends Controller
             //  begin timezone conversion
             $timezone = empty($request->header('timezone')) ? 'utc' : $request->header('timezone');
 
+            /* if(!empty($request->weightType)){
+                 $voteTypes = VoteType::where('event_key',$event->key)->get();
+                 $weightType = $request->weightType;
 
+                 foreach($voteTypes as $key => $voteType){
+                     $voteType->pos = $weightType[$key]['pos'];
+                     $voteType->weight = $weightType[$key]['weight'];
+
+                     $voteType->save();
+
+                     $voteTypeTranslations = $voteType->voteTypeTranslations()->get();
+                     $voteTypeTranslations = $voteTypeTranslations->keyBy('lang_code');
+
+                     foreach($voteTypeTranslations as $keyLang => $translation){
+                         if($translation['lang_code'] == $weightType[$key]['translations'][$keyLang]['lang_code']){
+                             $translation['text'] = $weightType[$key]['translations'][$keyLang]['translation'];
+                             $translation->save();
+                         }
+                     }
+                 }
+             }*/
 
             //$event = ONE::timezoneConversion($event, $timezone);
             $event->save();
@@ -654,9 +701,11 @@ class EventsController extends Controller
                 foreach ($request->json('configurations') as $configuration) {
                     if (!empty($configuration['configuration_id'] && isset($configuration['value']))) {
                         if(ConfigurationEvent::whereConfigurationId($configuration['configuration_id'])->whereEventId($event->id)->whereGeneralConfigId(null)->exists()){
-                            $configurationEvent = ConfigurationEvent::whereConfigurationId($configuration['configuration_id'])->whereEventId($event->id)->whereGeneralConfigId(null)->first();
-                            $configurationEvent->value = $configuration['value'];
-                            $configurationEvent->save();
+                            // $configurationEvent = ConfigurationEvent::whereConfigurationId($configuration['configuration_id'])->whereEventId($event->id)->whereGeneralConfigId(null)->first();
+                            // $configurationEvent->value = $configuration['value'];
+                            // $configurationEvent->save();
+                            $sql = "UPDATE `configuration_events` SET `value`=? WHERE `configuration_id` = ? AND `event_id` = ? AND `general_config_id` IS NULL";
+                            DB::update($sql, [$configuration['value'],$configuration['configuration_id'],$event->id]);
                         }else{
                             do {
                                 $rand = str_random(32);
@@ -709,9 +758,11 @@ class EventsController extends Controller
                             if (!empty($configuration['configuration_id'] && isset($configuration['value']))) {
                                 if (Configuration::whereId($configuration['configuration_id'])->whereMethodId($request->json('method_id'))->exists()) {
                                     if (ConfigurationEvent::whereConfigurationId($configuration['configuration_id'])->whereEventId($event->id)->whereGeneralConfigId($generalConfig->id)->exists()) {
-                                        $configurationEvent = ConfigurationEvent::whereConfigurationId($configuration['configuration_id'])->whereEventId($event->id)->whereGeneralConfigId($generalConfig->id)->first();
-                                        $configurationEvent->value = $configuration['value'];
-                                        $configurationEvent->save();
+                                        // $configurationEvent = ConfigurationEvent::whereConfigurationId($configuration['configuration_id'])->whereEventId($event->id)->whereGeneralConfigId($generalConfig->id)->first();
+                                        // $configurationEvent->value = $configuration['value'];
+                                        // $configurationEvent->save();
+                                        $sql = "UPDATE `configuration_events` SET `value`=? WHERE `configuration_id` = ? AND `event_id` = ? and `general_config_id` = ?";
+                                        DB::update($sql, [$configuration['value'],$configuration['configuration_id'],$event->id, $generalConfig->id]);
                                     } else {
                                         do {
                                             $rand = str_random(32);
@@ -735,7 +786,6 @@ class EventsController extends Controller
             }
 
             $event = Event::with('configurationEvents', 'method')->findOrFail($event->id);
-
             return response()->json($event, 201);
 
         } catch (ModelNotFoundException $e) {
@@ -816,7 +866,7 @@ class EventsController extends Controller
         $userKey = ONE::verifyToken($request);
 
         try {
-            $event = Event::whereKey($key)->firstOrFail();
+            $event = Event::where("key",$key)->firstOrFail();
             $event->delete();
 
             return response()->json('Ok', 200);
@@ -845,14 +895,14 @@ class EventsController extends Controller
         //VERIFY PERMISSIONS
 
         try {
-            $event = Event::whereKey($key)->firstOrFail();
+            $event = Event::where("key",$key)->firstOrFail();
             $event->configurations()->attach($request->json('configuration_id'), ['value' => $request->json('value'), 'created_by' => $userKey]);
 
             $event = Event::with(['configurations' =>
                 function ($query) {
                     $query->select(array('configuration_id', 'value'));
                 }
-            ])->whereKey($key)->firstOrFail();
+            ])->where("key",$key)->firstOrFail();
             return response()->json($event, 201);
 
         } catch (ModelNotFoundException $e) {
@@ -881,7 +931,7 @@ class EventsController extends Controller
         //VERIFY PERMISSIONS
 
         try {
-            $event = Event::whereKey($key)->findOrFail();
+            $event = Event::where("key",$key)->findOrFail();
             $event->configurations()->dettach($request->json('configuration_id'));
 
             return response()->json('Ok', 200);
@@ -904,11 +954,22 @@ class EventsController extends Controller
     public function totalVotes(Request $request, $eventKey)
     {
         try {
-            $event = Event::whereKey($eventKey)->firstOrFail();;
-            $data['votes'] = $event->votes()->get();
-            $data['positives'] = ($event->votes()->select(DB::raw('count(*) as total, vote_key'))->where('value', '>', 0)->groupBy('vote_key')->pluck('total', 'vote_key'));
-            $data['negatives'] = ($event->votes()->select(DB::raw('count(*) as total, vote_key'))->where('value', '<', 0)->groupBy('vote_key')->pluck('total', 'vote_key'));
-            $data['users'] = ($event->votes()->select(DB::raw('count(*) as total, user_key'))->groupBy('user_key')->pluck('total', 'user_key'));
+            $event = Event::where("key",$eventKey)->firstOrFail();
+            if($request->submitted){
+                $data['total_votes'] = $event->votes()->get();
+                $data['votes'] = $event->votes()->whereSubmitted(1)->get();
+                $data['positives'] = ($event->votes()->select(DB::raw('count(*) as total, vote_key'))->where('submitted', '=', 1)->where('value', '>', 0)->groupBy('vote_key')->pluck('total', 'vote_key'));
+                $data['negatives'] = ($event->votes()->select(DB::raw('count(*) as total, vote_key'))->where('submitted', '=', 1)->where('value', '<', 0)->groupBy('vote_key')->pluck('total', 'vote_key'));
+                $data['users'] = ($event->votes()->select(DB::raw('count(*) as total, user_key'))->where('submitted', '=', 1)->groupBy('user_key')->pluck('total', 'user_key'));
+
+            }else{
+                $data['votes'] = $event->votes()->get();
+                $data['votes_submitted'] = $event->votes()->whereSubmitted(1)->get();
+                $data['positives'] = ($event->votes()->select(DB::raw('count(*) as total, vote_key'))->where('value', '>', 0)->groupBy('vote_key')->pluck('total', 'vote_key'));
+                $data['negatives'] = ($event->votes()->select(DB::raw('count(*) as total, vote_key'))->where('value', '<', 0)->groupBy('vote_key')->pluck('total', 'vote_key'));
+                $data['users'] = ($event->votes()->select(DB::raw('count(*) as total, user_key'))->groupBy('user_key')->pluck('total', 'user_key'));
+            }
+
             return response()->json(["data" => $data], 200);
         } catch (ModelNotFoundException $e) {
             return response()->json(['error' => 'Event not Found'], 404);
@@ -930,7 +991,7 @@ class EventsController extends Controller
             if (!empty($request->json('events'))) {
 
                 foreach ($request->json('events') as $event) {
-                    $event = Event::whereKey($event)->first();
+                    $event = Event::where("key",$event)->first();
 
                     if (!is_null($event)) {
 
@@ -948,7 +1009,19 @@ class EventsController extends Controller
                             }
                         }
 
-                        $configurationEvents = $event->configurationEvents()->get();
+
+                        /* $voteTypes = VoteType::where('event_key',$event->key)->get();
+                         foreach ($voteTypes as $voteType) {
+                             $translations = $voteType->translations();
+                             foreach($translations as $translation){
+                                     $voteType['lang_code'] = $translation['lang_code'];
+                                     $voteType['text']      = $translation['translation'];
+
+                             }
+                             $voteType['translations'] = $voteType['translations']->keyBy('lang_code');
+                         }*/
+
+                        $configurationEvents = $event->configurationEvents()->whereNull("general_config_id")->get();
 
                         foreach ($configurationEvents as $configurationEvent) {
                             $config = $configurationEvent->configuration()->first();
@@ -966,6 +1039,7 @@ class EventsController extends Controller
                         }
 
                         $event['method'] = $method;
+//                        $event['voteType'] = $voteTypes;
                         $event['configurations'] = $configurationEvents;
 
                         $events[] = $event;
@@ -996,14 +1070,16 @@ class EventsController extends Controller
         }
 
         try{
-            $event = Event::whereKey($key)->firstOrfail();
+            $event = Event::where("key",$key)->firstOrfail();
+
             $canVote = false;
             $data['vote'] = $this->checkOpenVoting($event);
 
             $data["alreadySubmitted"] = $event->votes()->whereUserKey($userKey)->whereSubmitted(1)->exists();
             $data['votes'] = $event->votes()->select('vote_key',DB::raw('SUM(value) as value'))->whereUserKey($userKey)->groupBy('vote_key')->get()->keyBy('vote_key');
+//            $data['votes_types'] = $event->votes()->with('voteType')->whereUserKey($userKey)->groupBy('vote_key')->get()->keyBy('vote_key');
             $totalSummary = [];
-
+            $weightType = null;
             switch ($event->method_id) {
                 case 1:
                     $likes = new Like($event);
@@ -1011,6 +1087,7 @@ class EventsController extends Controller
                     $totalVotes = $likes->getTotalVotes();
                     break;
                 case 2:
+
                     $positiveVote = new MultiVote($event);
                     $totalVotes = $positiveVote->getTotalVotes();
                     $totalSummary = $positiveVote->getTotalSummary();
@@ -1018,6 +1095,7 @@ class EventsController extends Controller
                     $canVote        = $positiveVote->verifyVoteSubmit($userKey);
                     $submitedDate = $positiveVote->verifyVoteSubmitDate($userKey);
 
+                    //                  $weightType = VoteType::where('event_key', '=', $event->key)->get();
                     break;
                 case 3:
                     $negativeVote = new NegativeVote($event);
@@ -1036,10 +1114,12 @@ class EventsController extends Controller
             $data['total_votes'] = $totalVotes;
             $data['total_summary'] = $totalSummary;
             $data['submited_date'] = $submitedDate ?? null;
+            $data['weightType'] = $weightType;
 
             return response()->json($data, 200);
 
         }catch(Exception $e){
+            dd($e->getMessage());
             return response()->json(['error' => 'Failed to verify status vote'], 500);
         }
     }
@@ -1054,7 +1134,7 @@ class EventsController extends Controller
         try{
             $totalVotes=[];
             $totalSummary=[];
-            $event = Event::whereKey($key)->firstOrfail();
+            $event = Event::where("key",$key)->firstOrfail();
             switch ($event->method_id) {
                 case 1:
                     $likes = new Like($event);
@@ -1095,7 +1175,7 @@ class EventsController extends Controller
             foreach ($keys as $key) {
                 $totalVotes=[];
                 $totalSummary=[];
-                $event = Event::with('method')->whereKey($key)->firstOrfail();
+                $event = Event::with('method')->where("key",$key)->firstOrfail();
                 switch ($event->method_id) {
                     case 1:
                         $likes = new Like($event);
@@ -1130,7 +1210,7 @@ class EventsController extends Controller
      */
     public function eventOpen(Request $request, $eventKey){
         try{
-            $event = Event::whereKey($eventKey)->firstOrFail();
+            $event = Event::where("key",$eventKey)->firstOrFail();
             if($this->checkOpenVoting($event)){
                 return response()->json(['vote' => true], 200);
             }
@@ -1172,7 +1252,7 @@ class EventsController extends Controller
         try {
             if (!empty($request->json('events'))) {
                 foreach ($request->json('events') as $event) {
-                    $event = Event::whereKey($event)->first();
+                    $event = Event::where("key",$event)->first();
 
                     if (!empty($event)){
                         $method = $event->method()->first();
@@ -1212,11 +1292,10 @@ class EventsController extends Controller
         $userKey = ONE::verifyToken($request);
 
         try {
-            $event = Event::whereKey($eventKey)->firstOrFail();
-            if(ONE::verifyRole($userKey, $request) == 'manager' ||ONE::verifyRole($userKey, $request) == 'admin') {
-                if (!empty($request->json('user_key')))
-                    $votes = $event->votes()->whereUserKey($request->json('user_key'))->whereSubmitted(0)->get();
-            } else
+            $event = Event::where("key",$eventKey)->firstOrFail();
+            if((ONE::verifyRole($userKey, $request) == 'manager' || ONE::verifyRole($userKey, $request) == 'admin') && !empty($request->json('user_key')))
+                $votes = $event->votes()->whereUserKey($request->json('user_key'))->whereSubmitted(0)->get();
+            else
                 $votes = $event->votes()->whereUserKey($userKey)->whereSubmitted(0)->get();
 
             if (isset($votes)) {
@@ -1229,7 +1308,8 @@ class EventsController extends Controller
                     return response()->json(['msg' => 'Submit Register','votes'=>$votes], 200);
                 else
                     return response()->json(['msg' => 'Submit Register'], 200);
-            }
+            } else
+                return response()->json(['msg' => 'No votes to submit'], 200);
         }catch (Exception $e) {
             return response()->json(['error' => 'Failed to submit Votes'], 500);
         }
@@ -1251,7 +1331,7 @@ class EventsController extends Controller
                 $totalVotes = 0;
 
                 foreach ($voteEvents as $voteEvent){
-                    $event = Event::whereKey($voteEvent)->first();
+                    $event = Event::where("key",$voteEvent)->first();
 
                     if (!is_null($event)){
                         $votes = count($event->votes()->get());
@@ -1278,15 +1358,34 @@ class EventsController extends Controller
 
             $userVotes = array();
             foreach ($eventKeys as $eventKey) {
-                $userVotesList = Event::whereKey($eventKey)->firstOrfail()->votes()->whereUserKey($userKey)->get();
+                $userVotesList = Event::where("key",$eventKey)->firstOrfail()->votes()->whereUserKey($userKey)->get();
                 foreach ($userVotesList as $userVote) {
                     $userVotes[] = $userVote;
                 }
             }
-
             return response()->json($userVotes, 200);
         }catch(Exception $e){
             return response()->json(['error' => 'Failed to get event or user votes'], 500);
+        }
+    }
+
+
+    public function getUserVoteForEvent(Request $request){
+        try{
+            $userKey = $request['userKey'];
+            $eventKey = $request['eventKey'];
+
+            $userVotesList = Event::where("key",$eventKey)->firstOrFail()->votes()->whereUserKey($userKey)->first();
+            if(is_null($userVotesList)){
+                $userVotesList = 0;
+                return response()->json($userVotesList, 200);
+            }else{
+                $userVotesList = 1;
+                return response()->json($userVotesList, 200);
+            }
+
+        }catch(Exception $e){
+            return response()->json(['error' => 'Failed to get user votes or event'], 500);
         }
     }
 
@@ -1337,7 +1436,7 @@ class EventsController extends Controller
             //CHECK IF THIS CALL IS FROM THIS CONTROLLER OR FROM A REQUEST, IF SO WE NEED TO REBUILD THE OBJECTS
             if(is_null($event)){
                 $eventKey = $request->get("eventKey");
-                $event = Event::whereKey($eventKey)->first();
+                $event = Event::where("key",$eventKey)->first();
                 if(!$event){
                     return response()->json(['error' => 'Failed to find the vote event'], 500);
                 }
@@ -1384,7 +1483,7 @@ class EventsController extends Controller
             $eventKey = $request->get("eventKey");
             $code = $request->get("code");
 
-            $event = Event::whereKey($eventKey)->first();
+            $event = Event::where("key",$eventKey)->first();
             if(!$event){
                 return response()->json(['error' => 'Failed to find the vote event'], 500);
             }
@@ -1423,7 +1522,7 @@ class EventsController extends Controller
             $userKey = ONE::verifyToken($request);
             $eventKey = $request->get("eventKey");
 
-            $event = Event::whereKey($eventKey)->first();
+            $event = Event::where("key",$eventKey)->first();
             if(!$event){
                 return response()->json(['error' => 'Failed to find the vote event'], 500);
             }
@@ -1454,7 +1553,7 @@ class EventsController extends Controller
             $eventKey = $request->get("eventKey");
             $code = $request->get("code");
 
-            $event = Event::whereKey($eventKey)->first();
+            $event = Event::where("key",$eventKey)->first();
             if(!$event){
                 return response()->json(['error' => 'Failed to find the vote event'], 500);
             }
@@ -1495,7 +1594,7 @@ class EventsController extends Controller
 
         if(ONE::verifyRole($userKey,$request) == 'manager' || ONE::verifyRole($userKey,$request) == 'admin'){
             try {
-                $event = Event::whereKey($eventKey)->firstOrFail();
+                $event = Event::where("key",$eventKey)->firstOrFail();
                 $votes = $event->votes()->get();
 
                 return response()->json(["eventID"=> $event->id, "event"=>$event, "votes"=>$votes], 200);
@@ -1516,7 +1615,7 @@ class EventsController extends Controller
             $eventKey = $request->get("eventKey");
             $userKey = $request->get("userKey");
             $votes = $request->get("votes");
-            $event = Event::whereKey($eventKey)->first();
+            $event = Event::where("key",$eventKey)->first();
             if(!$event){
                 return response()->json(['error' => 'Failed to find the vote event'], 500);
             }
@@ -1588,6 +1687,134 @@ class EventsController extends Controller
             }
         } catch (Exception $e){
             dd($e->getMessage());
+        }
+    }
+
+    public function getEventsVoteCount(Request $request) {
+        try {
+            $voteEventKeys = $request->get("events");
+
+            $events = Event::withCount("votes")
+                ->whereIn("key",$voteEventKeys)
+                ->get();
+
+            return response()->json($events);
+        } catch(Exception $e) {
+            return response()->json(['error' => 'Failed to Get Events Vote count'], 500);
+        }
+    }
+
+    /**
+     * FETCH VOTE EVENTS ACCORDING TO THE GIVEN KEYS
+     * IF A USER IS SUPPLIED FETCH HIS VOTES AND AVAILAVE ACTIONS
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getPadVotes(Request $request)
+    {
+        try {
+            $voteKeys = $request->get('events');
+
+            $events = Event::whereIn('key',$voteKeys)->with([
+                'method',
+                'configurationEvents' => function ($q){
+                    $q->with([
+                        'configuration'
+                    ]);
+                }
+            ])->get();
+
+            $userKey = $request->get('user_key');
+            
+            $response = [];
+
+            foreach ($events as $event){
+
+                $status = $this->getStatus($request,$event,$userKey)->getData();
+
+                $configurations = [];
+                if(!$event->configurationEvents->isEmpty()){
+                    foreach ($event->configurationEvents as $configurationEvent) {
+                        $configurations[] = ['code' => $configurationEvent->configuration->code, 'value' => $configurationEvent->value];
+                    }
+                }
+                $response[] =[
+                    'event_key' => $event->key,
+                    'method' => $event->method->code,
+                    'start_date' => $event->start_date,
+                    'end_date' => $event->end_date,
+                    'start_time' => $event->start_time,
+                    'end_time' => $event->end_time,
+                    '_count_votes' => $event->_count_votes,
+                    'is_open' => $status->vote,
+                    'already_submitted' => $status->alreadySubmitted,
+                    'can_vote' => $status->can_vote,
+                    'submitted_date' => $status->submitted_date,
+                    'configurations' => $configurations,
+                    'user_votes' => $status->user_votes
+                ];
+            }
+
+            return response()->json(['data' => $response], 200);
+
+        } catch (Exception $e) {
+            return response()->json(['errors' => $e->getMessage()], 500);
+        } catch (\Throwable $t) {
+            return response()->json(['errors' => $t->getMessage()], 500);
+        }
+
+    }
+
+
+    public function getStatus(Request $request, $event, $userKey)
+    {
+        try {
+            $data['vote'] = $this->checkOpenVoting($event);
+            $data['can_vote'] = false;
+            $data['submitted_date'] = null;
+            $data["alreadySubmitted"] = false;
+            $data['user_votes'] = [];
+            $data['submitted_date'] = null;
+
+            if (!empty($userKey)) {
+                $checkSubmission = Vote::whereEventId($event->id)->whereUserKey($userKey)->whereSubmitted(1)->first();
+                $userVotes = Vote::whereEventId($event->id)->whereUserKey($userKey)->get();
+
+                if (!$userVotes->isEmpty()) {
+                    $data['user_votes'] = $userVotes->pluck('vote_key');
+                }
+
+                if (empty($checkSubmission)) {
+                    $data['can_vote'] = true;
+                    $data["alreadySubmitted"] = false;
+                } else {
+                    $data['submitted_date'] = $checkSubmission->updated_at;
+                    $data['can_vote'] = false;
+                    $data["alreadySubmitted"] = true;
+                }
+            }
+            return response()->json($data, 200);
+
+        } catch (Exception $e) {
+            return response()->json(['error' => 'Failed to verify status vote'], 500);
+        }
+    }
+    public function getTopicVoteSubmitted(Request $request){
+        try {
+
+            return response()->json($request->all());
+            // $topicsKey = json_decode($request->topicsKey);
+
+            // $topics = [];
+            // foreach($topicsKey as $key){
+            //     array_push($topics, $key);
+            // }
+
+            // $votes = Event::all();
+
+        } catch(Exception $e) {
+            dd($e->getMessage());
+            return response()->json(['error' => 'Failed to Get Topic Vote Submitted'], 500);
         }
     }
 }

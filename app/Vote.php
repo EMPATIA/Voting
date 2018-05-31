@@ -13,7 +13,7 @@ class Vote extends Model
      *
      * @var array
      */
-    protected $fillable = ['user_key', 'event_id', 'vote_key', 'value', 'source'];
+    protected $fillable = ['vote_type_id','user_key', 'event_id', 'vote_key', 'value', 'submitted', 'source'];
 
     /**
      * The attributes that should be mutated to dates.
@@ -29,5 +29,13 @@ class Vote extends Model
      */
     public function event(){
         return $this->belongsTo('App\Event');
+    }
+    /**
+     * An Vote belongs to  Event
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function voteType(){
+        return $this->belongsTo('App\VoteType');
     }
 }

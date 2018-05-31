@@ -133,10 +133,7 @@ class GeneralConfigTypeController extends Controller
             $generalConfigTypes = GeneralConfigType::all();
 
             foreach ($generalConfigTypes as $generalConfigType){
-                if(!($generalConfigType->translation($request->header('LANG-CODE')))){
-                    if (!$generalConfigType->translation($request->header('LANG-CODE-DEFAULT')))
-                        return response()->json(['error' => 'No translation found'], 404);
-                }
+                $generalConfigType->newTranslation($request->header('LANG-CODE'), $request->header('LANG-CODE-DEFAULT'));
             }
 
             return response()->json(['data' => $generalConfigTypes], 200);

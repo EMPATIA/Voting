@@ -112,11 +112,7 @@ class MethodGroupsController extends Controller
             $methodGroups = MethodGroup::all();
 
             foreach ($methodGroups as $methodGroup){
-                if(!($methodGroup->translation($request->header('LANG-CODE')))){
-                    if (!$methodGroup->translation($request->header('LANG-CODE-DEFAULT')))
-                        if (!$methodGroup->translation('en'))
-                            return response()->json(['error' => 'No translation found'], 404);
-                }
+                $methodGroup->newTranslation($request->header('LANG-CODE'), $request->header('LANG-CODE-DEFAULT'));
             }
 
             return response()->json(['data' => $methodGroups], 200);

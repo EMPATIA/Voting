@@ -34,6 +34,7 @@ class Like extends VoteMethod{
         }else{
             $numVotes = 0;
         }
+
         if ( (!$this->allowDislike() && $numVotes == 0) || ($this->allowDislike()) ){
             if($voteValue > 0 && $voteValue!=$numVotes) {
                 return true;
@@ -42,7 +43,21 @@ class Like extends VoteMethod{
             }
         }
 
-        $this->message = "You can't make this LIKE!";
+
+        /*
+        if ( (!$this->allowDislike() && $numVotes == 0) || ($this->allowDislike()) ){
+            if($voteValue > 0 && $voteValue!=$numVotes) {
+                return true;
+            }elseif ($voteValue < 0 && $voteValue!=$numVotes){
+                return true;
+            } else if($voteValue > 0 && $voteValue==$numVotes) {
+                return false;
+            } else if($voteValue < 0 && $voteValue==$numVotes) {
+                return false;
+            }
+        }
+        */
+
         return false;
     }
 

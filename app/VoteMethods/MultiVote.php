@@ -193,7 +193,8 @@ class MultiVote extends VoteMethod{
      * @return mixed
      */
     public function getTotalVotes(){
-        $data = $this->event->votes()->groupBy('vote_key')->get()->keyBy('vote_key');
+
+        $data = $this->event->votes()->with('voteType')->groupBy('vote_key')->get()->keyBy('vote_key');
         $positiveVotesTopics = array_count_values($this->event->positiveVotes()->get()->pluck('vote_key')->toArray());
         $negativeVotesTopics = array_count_values($this->event->negativeVotes()->get()->pluck('vote_key')->toArray());
 
@@ -326,7 +327,7 @@ class MultiVote extends VoteMethod{
         }
         $response['remainingVotes'] = $remainingVotes;
 
-        $getTotalVotes = $this->event->votes()->groupBy('vote_key')->get()->keyBy('vote_key');
+        $getTotalVotes = $this->event->votes()->with('voteType')->groupBy('vote_key')->get()->keyBy('vote_key');
         $positiveVotesTopics = array_count_values($this->event->positiveVotes()->get()->pluck('vote_key')->toArray());
         $negativeVotesTopics = array_count_values($this->event->negativeVotes()->get()->pluck('vote_key')->toArray());
 

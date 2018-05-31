@@ -52,6 +52,6 @@ class CreateGeneralConfigTypeTranslationsTable extends Migration
      */
     public function down()
     {
-        Schema::drop('general_config_type_translation');
+        Schema::drop('general_config_type_translations');
     }
 }

@@ -26,4 +26,37 @@ class Empatia
             ]
         ]);
     }
+
+    public static function checkIfUserHasAllLoginLevelsToVote($eventKey,$userKey,$entityKey,$languageCode) {
+        $response = One::post([
+            'component' => 'empatia',
+            'api' => 'cb',
+            'method' => 'checkIfUserHasAllLoginLevelsToVote',
+            'params'=>[
+                'event_key'=> $eventKey,
+                'user_key' => $userKey,
+                'entity_key' => $entityKey,
+                'language_code' => $languageCode
+
+            ]
+        ]);
+
+        if($response->statusCode() != 200){
+            return false;
+        }
+        return true;
+    }
+
+    public static function getVoteEventConfigurations($voteKey) {
+        $response = One::get([
+            'component' => 'empatia',
+            'api' => 'vote',
+            'method' => $voteKey
+        ]);
+
+        if($response->statusCode() != 200){
+            throw new Exception(trans("comModulesEMPATIA.failed_to_get_vote_event_configurations"));
+        }
+        return $response->json();
+    }
 }

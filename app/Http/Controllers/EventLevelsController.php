@@ -178,4 +178,27 @@ class EventLevelsController extends Controller
         }
         return response()->json(['error' => 'Unauthorized'], 401);
     }
+
+    /**
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getAllEventLevelsByCbKey(Request $request)
+    {
+        try {
+            $eventId = [];
+            $eventLevel = EventLevel::where('cb_key','=',$request->cb_key)->get();
+            foreach (!empty($eventLevel) ? $eventLevel : [] as $key => $value) {
+                $vote = Event::where('id','=',$value['event_id'])->first();
+                $eventId[$vote->key]=$value['value'];
+            }
+            return response()->json($eventId, 200);
+
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['error' => 'EventLevel not Found'], 404);
+        } catch (Exception $e) {
+            return response()->json(['error' => 'Failed to retrieve the EventLevelCbKey'], 500);
+        }
+        return response()->json(['error' => 'Unauthorized'], 401);
+    }
 }

@@ -27,6 +27,8 @@ Route::get('/', function () {
 */
 Route::group(['middleware' => ['authOne']], function () {
 
+
+    
     /**
      * Route for the requests of Method Groups
      */
@@ -57,17 +59,26 @@ Route::group(['middleware' => ['authOne']], function () {
     Route::post('vote/eventVotes/{eventKey}', 'VotesController@eventVotes');
     Route::post('vote/voteCode', 'VotesController@getDataForVoteCode');
     Route::get('vote/voteTimeline/', 'VotesController@voteTimeline');
-    Route::resource('vote', 'VotesController', ['only' => ['show','store']]);
+    Route::post('vote/userVotesCount', 'VotesController@userVotesCount');
+    Route::get('vote/getVoteList', 'VotesController@getVoteList');
+    Route::post('vote/submitUserVote', 'VotesController@submitUserVote');
+    Route::delete('vote/deleteUserVotes', 'VotesController@deleteUserVotes');
+    Route::post('vote/deleteVotes', 'VotesController@deleteVotes'); 
+    Route::resource('vote', 'VotesController', ['only' => ['show','store','destroy']]);
 
     /**
      * Route for the requests of Events
      */
+    Route::post('event/getPadVotes', 'EventsController@getPadVotes');
+    Route::post('event/voteCounts', 'EventsController@getEventsVoteCount');
+    Route::get('event/getTopicVoteSubmitted', 'EventsController@getTopicVoteSubmitted');
     Route::post('event/unSubmitUserVotesInEvent', 'EventsController@unSubmitUserVotesInEvent');
     Route::post('event/deleteUserVotesInVoteEvent', 'EventsController@deleteUserVotesInVoteEvent');
     Route::post('event/registerUserInPersonVoting', 'EventsController@registerUserInPersonVoting');
     Route::post('event/attachUserToVoteEventWithCode' , 'EventsController@attachUserToVoteEventWithCode');
     Route::post('event/storePublicUserVoting', 'EventsController@storePublicUserVoting');
     Route::post('event/userVotes' , 'EventsController@getUserVotesForEvent');
+    Route::post('event/userVotesForEvent' , 'EventsController@getUserVoteForEvent');
     Route::post('event/getCbTotalVotes/', 'EventsController@getCbTotalVotes');
     Route::post('event/showEvents', 'EventsController@showEvents');
     Route::post('event/showEventsNoTranslation', 'EventsController@showEventsNoTranslation');
@@ -93,6 +104,7 @@ Route::group(['middleware' => ['authOne']], function () {
     Route::get('eventlevels/storeEventLevel', 'EventLevelsController@store');
     Route::get('eventlevels/updateEventLevel', 'EventLevelsController@update');
     Route::get('eventlevels/eventlevelCbKey', 'EventLevelsController@eventLevelCbKey');
+    Route::get('eventlevels/getAllEventLevelsByCbKey', 'EventLevelsController@getAllEventLevelsByCbKey');
 
 
     /**
@@ -101,4 +113,6 @@ Route::group(['middleware' => ['authOne']], function () {
 
     Route::get('generalConfigType/list', 'GeneralConfigTypeController@index');
 
+    /* SMS Vote Methods */
+    Route::post("smsVote","VotesController@smsVote");
 });

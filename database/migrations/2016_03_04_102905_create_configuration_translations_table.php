@@ -51,7 +51,8 @@ class CreateConfigurationTranslationsTable extends Migration
             array('id' => '25',   'configuration_id' => '8',  'language_code' => 'de',  'name' => 'Starting value to rank',           'description' => 'Starting  value to rank',                         'created_at' => Carbon::now(),'updated_at' => Carbon::now(),'deleted_at' => NULL),
             array('id' => '26',   'configuration_id' => '8',  'language_code' => 'en',  'name' => 'Starting  value to rank',          'description' => 'Starting value to rank',                          'created_at' => Carbon::now(),'updated_at' => Carbon::now(),'deleted_at' => NULL),
             array('id' => '27',   'configuration_id' => '8',  'language_code' => 'fr',  'name' => 'Starting  value to rank',          'description' => 'Starting value to rank',                          'created_at' => Carbon::now(),'updated_at' => Carbon::now(),'deleted_at' => NULL),
-            array('id' => '28',   'configuration_id' => '8',  'language_code' => 'es',  'name' => 'Starting value to rank',           'description' => 'Starting value to rank',                          'created_at' => Carbon::now(),'updated_at' => Carbon::now(),'deleted_at' => NULL)
+            array('id' => '28',   'configuration_id' => '8',  'language_code' => 'es',  'name' => 'Starting value to rank',           'description' => 'Starting value to rank',                          'created_at' => Carbon::now(),'updated_at' => Carbon::now(),'deleted_at' => NULL),
+            array('id' => '29',   'configuration_id' => '8',  'language_code' => 'es',  'name' => 'Starting value to rank',           'description' => 'Starting value to rank',                          'created_at' => Carbon::now(),'updated_at' => Carbon::now(),'deleted_at' => NULL)
         );
         DB::table('configuration_translations')->insert($configurationTranslations);
 

@@ -20,8 +20,11 @@ services:
         arguments:
             - "@tolerance.metrics.traced_publisher.inner"
 
-    tolerance.tracer:
+    tolerance.tracer.in_memory:
         class: "Tolerance\\Tracer\\InMemoryTracer"
+
+    tolerance.tracer:
+        alias: tolerance.tracer.in_memory
 
 beberlei_metrics:
     collectors:
@@ -45,11 +48,6 @@ tolerance:
                                     'null': ~
 
     aop: ~
-
-    message_profile:
-        storage:
-            buffered: false
-            in_memory: true
 
     tracer:
         zipkin:
